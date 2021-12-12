@@ -6,15 +6,18 @@
 from osgeo import gdal, ogr, osr
 import numpy as np
 import math
+import sys
 import matplotlib.pyplot as plt
 
 #######################################################################
 ## PREMENNE A CESTY
-dem_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\DEM.tif" #cesta k dem
-point_layer_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\POINT.shp"   #cesta k bodovej vrstve
+dem_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\dem\dmr.tif" #cesta k dem
+point_layer_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\point\POINT.shp"   #cesta k bodovej vrstve
 band_number = 1 #vybrane pasmo z dem, default = 1
-throwshed_output_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\throwshed.shp"  #cesta vytvaraneho throwshed polygonu
+throwshed_output_folder = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\throwshed"  #cesta k priecinku, kde sa ulozi subor
+throwshed_file = r"2_throwshed_nn_1m_1m_rad_25deg"   #nazov vystupneho suboru
 EPSG = 8353 #EPSG kod vystupnej vrstvy throwshedu
+int_compare = 1 #interpolacia DMR vo vypoctovych bodoch, nearest neighbour = 0, linear = 1
 # POTOM ZISTIT PRECO VRSTVA S TAKTO PRIDELENYM REF. SYS. CEZ EPSG (dole) nema priradeny referencny system po importe do QGISu
 
 #konkretny atribut a konkretna jeho hodnota este nevyriesena
@@ -22,7 +25,7 @@ EPSG = 8353 #EPSG kod vystupnej vrstvy throwshedu
 #point_attribute = "id" 
 
 h = 1.6 #pociatocna vyska nad povrchom [m]
-alfa = 35.0 #uhol hodu/vystrelu [°]
+alfa =45.0 #uhol hodu/vystrelu [°]
 g = -9.8 #gravitacne zrychlenie [m/s^2]
 V_0 = 67.0 #pociatocna rychlost [m/s]
 ro = 1.225 #hustota vzduchu [kg/m^3], pri t = 15°C, H = 0m, Fi = 0# (suchy vzduch) sa ro = 1.225 kg/m^3
@@ -146,7 +149,8 @@ while True:
 
 # print(y_r)
 
-#Otacame pod azimutom a porovnavame hodnoty z y_r s DMR
+
+# Otacame pod azimutom a porovnavame hodnoty z y_r s DMR
 Azimuth = 0  #azimut, smer sever
 X_coor_point_polygon = []
 Y_coor_point_polygon = []
@@ -160,13 +164,33 @@ while True:
         X_coor_compare_point = X_coor_point + r*math.sin(Azimuth/180*math.pi)
         Y_coor_compare_point = Y_coor_point + r*math.cos(Azimuth/180*math.pi)
 
-        #interpolacia DMR v bode porovnania (nearest neighbour)
-        dem_int_cell_column = round(abs((X_coor_compare_point - (dem_gt[0]+dem_gt[1]/2))/dem_gt[1]))
-        dem_int_cell_row = round(abs((Y_coor_compare_point - (dem_gt[3]+dem_gt[5]/2))/dem_gt[5]))
-        dem_int_cell_height = dem_array[dem_int_cell_row][dem_int_cell_column]
+        # Interpolacia DMR v porovnavanom bode
+        if int_compare == 0:
+            #interpolacia DMR v bode porovnania (nearest neighbour)
+            dem_int_cell_column = round(abs((X_coor_compare_point - (dem_gt[0]+dem_gt[1]/2))/dem_gt[1]))
+            dem_int_cell_row = round(abs((Y_coor_compare_point - (dem_gt[3]+dem_gt[5]/2))/dem_gt[5]))
+            dem_int_point_height = dem_array[dem_int_cell_row][dem_int_cell_column]
+        elif int_compare == 1:
+            #interpolacia DMR v bode porovnania (linear)
+            dem_int_cell_column = np.floor(abs((X_coor_compare_point - (dem_gt[0]+dem_gt[1]/2))/dem_gt[1])).astype(np.int32) #najblizsii nizsi stlpec v array od bodu
+            dem_int_cell_row = np.floor(abs((Y_coor_compare_point - (dem_gt[3]+dem_gt[5]/2))/dem_gt[5])).astype(np.int32)    #najblizsii nizsi riadok v array od bodu
+            X_coor_cell_1 = dem_gt[0] + dem_gt[1]/2 + dem_int_cell_column*dem_gt[1] #X suradnica stredov lavych buniek
+            # X_coor_cell_2 = dem_gt[0] + dem_gt[1]/2 + (dem_int_cell_column+1)*dem_gt[1] #X suradnica stredov pravych buniek
+            Y_coor_cell_1 = dem_gt[3] + dem_gt[5]/2 + (dem_int_cell_row+1)*dem_gt[5] #Y suradnica stredov dolnych buniek
+            # Y_coor_cell_2 = dem_gt[3] + dem_gt[5]/2 + dem_int_cell_row*dem_gt[5] #Y suradnica stredov hornych buniek
+            H_1 = dem_array[dem_int_cell_row][dem_int_cell_column]  #H lavej hornej bunky
+            H_2 = dem_array[dem_int_cell_row][dem_int_cell_column+1]  #H pravej hornej bunky
+            H_3 = dem_array[dem_int_cell_row+1][dem_int_cell_column]  #H lavej dolnej bunky
+            H_4 = dem_array[dem_int_cell_row+1][dem_int_cell_column+1]  #H pravej dolnej bunky
+            H_int_1 = ((X_coor_compare_point-X_coor_cell_1)*(H_4-H_3))/(abs(dem_gt[1])) + H_3   #Interpolovana vyska na dolnej linii
+            H_int_2 = ((X_coor_compare_point-X_coor_cell_1)*(H_2-H_1))/(abs(dem_gt[1])) + H_1   #Interpolovana vyska na hornej linii
+            dem_int_point_height = ((Y_coor_compare_point-Y_coor_cell_1)*(H_int_2-H_int_1))/(abs(dem_gt[5])) + H_int_1   #Interpolovana vyska medzi dolnou a hornou liniou
+        else:
+            print("Hodnota int_compare neznama.")
+            exit()
 
         #porovnanie vysky bunky s vyskou sipu, ak je sip pod DMR, zapise sa suradnica bodu
-        if dem_int_cell_height >= y_r[j]:
+        if dem_int_point_height >= y_r[j]:
             X_coor_point_polygon.append(X_coor_compare_point)
             Y_coor_point_polygon.append(Y_coor_compare_point)
             break
@@ -206,14 +230,23 @@ throwshed_polygon.AddGeometry(throwshed_ring)
 
 # ulozenie polygonu do vrstvy
 driver = ogr.GetDriverByName("ESRI Shapefile")
-throwshed_outds = driver.CreateDataSource(throwshed_output_path)
+throwshed_outds = driver.CreateDataSource(throwshed_output_folder + "\\" + throwshed_file + ".shp")
 srs = osr.SpatialReference()
 srs.ImportFromEPSG(EPSG)    #definicia referencneho systemu
-throwshed_outlayer = throwshed_outds.CreateLayer("throwshed", srs)
+# srs = point_layer.GetSpatialRef()
+srs.MorphToESRI()
+file = open(throwshed_output_folder + "\\" + throwshed_file + ".prj", 'w')
+file.write(srs.ExportToWkt())
+file.close()
+print("\n", srs.ExportToPrettyWkt(), "\n")
+throwshed_outlayer = throwshed_outds.CreateLayer(throwshed_file, srs)
 
 # pridanie polygonu do feature a jeho ulozenie do vystupnej vrstvy
 throwshed_feature = ogr.Feature(throwshed_outlayer.GetLayerDefn())
 throwshed_feature.SetGeometry(throwshed_polygon)
 throwshed_outlayer.CreateFeature(throwshed_feature)
 
+# nakoniec vrstva, datasource aj prvok treba dat rovne None
 throwshed_outds = throwshed_outlayer = throwshed_feature = None
+
+
