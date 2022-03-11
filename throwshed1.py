@@ -8,26 +8,27 @@ import numpy as np
 import math
 import sys
 import matplotlib.pyplot as plt
+import os
 
 #######################################################################
 ## CESTY
-dem_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\dem\LDR_25cm_DEM.tif" #cesta k dem
+dem_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\dem\dmr.tif" #cesta k dem
 point_layer_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\point\POINT.shp"   #cesta k bodovej vrstve
 throwshed_output_folder = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\throwshed"  #cesta k priecinku, kde sa ulozi subor
-throwshed_file = r"skuska"   #nazov vystupneho suboru
+throwshed_file = r"skuska1"   #nazov vystupneho suboru s cistym throwshedom
+viewshed_file = r"viewshed" #nazov vystupneho suboru s viewshedom (ak sa ma pouzit)
+viewshed_clip_file = r"viewshed_clip"   #nazov vystupneho suboru s orezanym viewshedom (ak sa ma pouzit viewshed)
 
 ## NASTAVENIA
+use_viewshed = 1 #pouzitie viditelnosti na orezanie throwshedu, nie = 0, ano = 1
 band_number = 1 #vybrane pasmo z dem, default = 1
 int_compare = 1 #interpolacia DMR vo vypoctovych bodoch, nearest neighbour = 0, linear = 1
-EPSG = 8353 #EPSG kod vystupnej vrstvy throwshedu
-# POTOM ZISTIT PRECO VRSTVA S TAKTO PRIDELENYM REF. SYS. CEZ EPSG (dole) nema priradeny referencny system po importe do QGISu
-#konkretny atribut a konkretna jeho hodnota este nevyriesena
-#point_id = 1    #vyber bodu z bodovej vrstvy, nie je to id z atributovej tabulky, ale poradie bodu
-#point_attribute = "id" 
+keep_point_crs = 0 #vystupna vrstva ma suradnicovy system ako vstupna bodova? ano = 1, nie, nastavim EPSG noveho SS = 0
+EPSG = 8353 #EPSG kod (suradnicovy system) vystupnej vrstvy throwshedu
 
 ## PREMENNE
 h = 1.6 #pociatocna vyska nad povrchom [m]
-alfa = 20.0 #uhol hodu/vystrelu [°]
+alfa = 10.0 #uhol hodu/vystrelu [°]
 g = -9.8 #gravitacne zrychlenie [m/s^2]
 V_0 = 100 #pociatocna rychlost [m/s]
 ro = 1.225 #hustota vzduchu [kg/m^3], pri t = 15°C, H = 0m, Fi = 0# (suchy vzduch) sa ro = 1.225 kg/m^3
@@ -37,6 +38,8 @@ m = 0.030 #hmotnost šípu [kg]
 dt = 0.001 #casovy interval [s]
 dA = 1 #krok v azimute [°]
 dr = 1 #krok vzdialenosti, pod ktorou sa bude vzdy interpolovat DMR a porovnavat sa s trajektoriou [m]
+h_E = 1.7 # vyska oci strielajuceho pre viewshed, defaultne 1.7
+h_T = 1.7 # vyska ciela pre viewshed, defaltne 0
 
 
 #############################################################################
@@ -55,10 +58,8 @@ point_ds = ogr.Open(point_layer_path, 0) #1 = editing, 0 = read only. Datasource
 # bodova vrstva
 point_layer = point_ds.GetLayer()
 
-# ZISTIT AKO NA TUTO SELEKCIU
-# # selekcia bodu s konkretnou hodnotou konkretneho atributu
-# point_layer.SetAttributeFilter(point_attribute = point_id)
-
+# ziskanie poctu bodov vo vrstve
+featureCount = point_layer.GetFeatureCount()
 
 # ziskanie konkretneho bodu
 point_feature = point_layer.GetFeature(0)
@@ -237,7 +238,9 @@ while True:
 # plt.show()
 
 
-# Vytvorenie novej vrstvy s polygonom so suradnicami coor_point_polygon
+#######################################################################
+## VYTVORENIE VYSTUPNEJ VRSTVY (VRSTIEV)
+
 # vytvorenie novej geometrie
 throwshed_ring = ogr.Geometry(ogr.wkbLinearRing)
 # pridanie bodov do geometrie
@@ -252,14 +255,13 @@ throwshed_polygon.AddGeometry(throwshed_ring)
 # ulozenie polygonu do vrstvy
 driver = ogr.GetDriverByName("ESRI Shapefile")
 throwshed_outds = driver.CreateDataSource(throwshed_output_folder + "\\" + throwshed_file + ".shp")
+
+# definicia referencneho systemu
 srs = osr.SpatialReference()
-srs.ImportFromEPSG(EPSG)    #definicia referencneho systemu
-# srs = point_layer.GetSpatialRef()
-srs.MorphToESRI()
-file = open(throwshed_output_folder + "\\" + throwshed_file + ".prj", 'w')
-file.write(srs.ExportToWkt())
-file.close()
-print("\n", srs.ExportToPrettyWkt(), "\n")
+if keep_point_crs == 0:
+    srs.ImportFromEPSG(EPSG)    
+if keep_point_crs == 1:
+    srs = point_layer.GetSpatialRef()
 throwshed_outlayer = throwshed_outds.CreateLayer(throwshed_file, srs)
 
 # pridanie polygonu do feature a jeho ulozenie do vystupnej vrstvy
@@ -267,5 +269,14 @@ throwshed_feature = ogr.Feature(throwshed_outlayer.GetLayerDefn())
 throwshed_feature.SetGeometry(throwshed_polygon)
 throwshed_outlayer.CreateFeature(throwshed_feature)
 
-# nakoniec vrstva, datasource aj prvok treba dat rovne None
+# nakoniec novovytvorena vrstva, datasource aj prvok treba dat rovne None, lebo inak sa nezobrazi spravne v QGISe
 throwshed_outds = throwshed_outlayer = throwshed_feature = None
+
+# Vyuzitie viewshedu
+if use_viewshed == 1:
+    # vytvorenie rastra viditelnosti, ulozi sa ako viewshed.tif do adresara s vystupnym throwshedom
+    gdal.ViewshedGenerate(srcBand=dem_band, driverName='GTiff', targetRasterName=throwshed_output_folder + "\\" + viewshed_file + ".tif", creationOptions=None, observerX=X_coor_point, observerY=Y_coor_point, observerHeight=h_E, targetHeight=h_T, visibleVal=1, invisibleVal=0, outOfRangeVal=0, noDataVal=-9999, dfCurvCoeff=0.85714, mode=2, maxDistance=10000)
+    # otvorenie viewshed rastra
+    viewshed_ds = gdal.Open(throwshed_output_folder + "\\" + viewshed_file + ".tif")
+    # orezanie rastra viditelnosti throwshedom
+    gdal.Warp(throwshed_output_folder + "\\" + viewshed_clip_file + ".tif", viewshed_ds, cutlineDSName = throwshed_output_folder + "\\" + throwshed_file + ".shp", cropToCutline = True, dstNodata = np.nan)
