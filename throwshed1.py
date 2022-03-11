@@ -93,7 +93,8 @@ else:
     min_height = dem_band.GetMinimum()  #ale ak nevyhadzuje None, tak rovno sa prideli hodnota
 
 
-# Vypocet trajektorie pre mnozinu x, s dragom
+# VYPOCET TRAJEKTORIE PROJEKTILU (x,y,y_r)
+
 # Pociatocny drag
 d = -ro*V_0**2*C_d*A/(2*m)    #presny vztah
 # d = -C_d/1000*V_0**2    #priblizny vztah, pre sip postacuje
@@ -218,10 +219,9 @@ while True:
             break
 
         #ak by sa stalo ze aj po poslednej vyske sipu je stale sip nad DMR, zapise sa posledna mozna suradnica, aby aj pod tymto azimutom bol predsalen bod (k problemu moze dojst zrejme pri nastaveni velkeho kroku dr)
-        if y_r[j] == y_r[-1]:
+        if j == len(y_r)-1:
             X_coor_point_polygon.append(X_coor_compare_point)
             Y_coor_point_polygon.append(Y_coor_compare_point)
-            print("Ojedinela situacia. Posledna porovnavana vyska sipu stale vyssie ako DMR. Zapise sa bod polygonu v najvacsej vzdielenosti z vypoctu. Pre vyhnutie sa problemu treba nastavit mensi krok dr")
             break
         j += 1
     Azimuth += dA
@@ -260,8 +260,12 @@ throwshed_outds = driver.CreateDataSource(throwshed_output_folder + "\\" + throw
 srs = osr.SpatialReference()
 if keep_point_crs == 0:
     srs.ImportFromEPSG(EPSG)    
-if keep_point_crs == 1:
+elif keep_point_crs == 1:
     srs = point_layer.GetSpatialRef()
+else:
+    print("Zle nastavena hodnota keep_point_crs.")
+    throwshed_outds = None
+    exit()
 throwshed_outlayer = throwshed_outds.CreateLayer(throwshed_file, srs)
 
 # pridanie polygonu do feature a jeho ulozenie do vystupnej vrstvy
