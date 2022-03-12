@@ -3,11 +3,10 @@
 #######################################################################
 
 ## KNIZNICE
+from matplotlib.style import use
 from osgeo import gdal, ogr, osr
 import numpy as np
 import math
-import sys
-import matplotlib.pyplot as plt
 import os
 
 #######################################################################
@@ -15,9 +14,9 @@ import os
 dem_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\dem\dmr.tif" #cesta k dem
 point_layer_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\point\POINT.shp"   #cesta k bodovej vrstve
 throwshed_output_folder = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\throwshed"  #cesta k priecinku, kde sa ulozi subor
-throwshed_file = r"throwshed"   #nazov vystupneho suboru s cistym throwshedom
-viewshed_file = r"viewshed" #nazov vystupneho suboru s viewshedom (ak sa ma pouzit)
-viewshed_clip_file = r"viewshed_clip"   #nazov vystupneho suboru s orezanym viewshedom (ak sa ma pouzit viewshed)
+throwshed_file = r"throwshed1"   #nazov vystupneho suboru s cistym throwshedom
+viewshed_file = r"viewshed1" #nazov vystupneho suboru s viewshedom (ak sa ma pouzit)
+viewshed_clip_file = r"viewshed_clip1"   #nazov vystupneho suboru s orezanym viewshedom (ak sa ma pouzit viewshed)
 
 ## NASTAVENIA
 use_viewshed = 1 #pouzitie viditelnosti na orezanie throwshedu, nie = 0, ano = 1
@@ -28,7 +27,7 @@ EPSG = 8353 #EPSG kod (suradnicovy system) vystupnej vrstvy throwshedu
 
 ## PREMENNE
 h = 1.6 #pociatocna vyska nad povrchom [m]
-alfa_min = 0.0 #minimalny uhol hodu/vystrelu [°]
+alfa_min = 45.0 #minimalny uhol hodu/vystrelu [°]
 alfa_max = 45.0 #maximalny uhol hodu/vystrelu [°], polozit rovne alfa_min, ak sa striela iba pod jednym uhlom
 g = -9.8 #gravitacne zrychlenie [m/s^2]
 V_0 = 100 #pociatocna rychlost [m/s]
@@ -61,7 +60,7 @@ point_ds = ogr.Open(point_layer_path, 0) #1 = editing, 0 = read only. Datasource
 point_layer = point_ds.GetLayer()
 
 # ziskanie poctu bodov vo vrstve
-featureCount = point_layer.GetFeatureCount()
+point_count = point_layer.GetFeatureCount()
 
 # ziskanie konkretneho bodu
 point_feature = point_layer.GetFeature(0)
@@ -298,14 +297,36 @@ throwshed_feature = ogr.Feature(throwshed_outlayer.GetLayerDefn())
 throwshed_feature.SetGeometry(throwshed_polygon)
 throwshed_outlayer.CreateFeature(throwshed_feature)
 
-# nakoniec novovytvorena vrstva, datasource aj prvok treba dat rovne None, lebo inak sa nezobrazi spravne v QGISe
-throwshed_outds = throwshed_outlayer = throwshed_feature = None
-
 # Vyuzitie viewshedu
 if use_viewshed == 1:
+    # treba zavriet polygonovu vrstvu
+    throwshed_outds = throwshed_outlayer = throwshed_feature = None
     # vytvorenie rastra viditelnosti, ulozi sa ako viewshed.tif do adresara s vystupnym throwshedom
     gdal.ViewshedGenerate(srcBand=dem_band, driverName='GTiff', targetRasterName=throwshed_output_folder + "\\" + viewshed_file + ".tif", creationOptions=None, observerX=X_coor_point, observerY=Y_coor_point, observerHeight=h_E, targetHeight=h_T, visibleVal=1, invisibleVal=0, outOfRangeVal=0, noDataVal=-9999, dfCurvCoeff=0.85714, mode=2, maxDistance=10000)
     # otvorenie viewshed rastra
     viewshed_ds = gdal.Open(throwshed_output_folder + "\\" + viewshed_file + ".tif")
     # orezanie rastra viditelnosti throwshedom
     gdal.Warp(throwshed_output_folder + "\\" + viewshed_clip_file + ".tif", viewshed_ds, cutlineDSName = throwshed_output_folder + "\\" + throwshed_file + ".shp", cropToCutline = True, dstNodata = np.nan)
+    # vymazanie polygonu .shp s throwshedom a rastra .tif s viewshedom
+    driver = ogr.GetDriverByName("ESRI Shapefile")
+    driver.DeleteDataSource(throwshed_output_folder + "\\" + throwshed_file + ".shp")
+    viewshed_ds = None
+    os.remove(throwshed_output_folder + "\\" + viewshed_file + ".tif")
+elif use_viewshed == 0:
+    # najprv treba vytvorit raster a dat mu nastavenia
+    throwshed_ds = gdal.GetDriverByName('GTiff').Create(throwshed_output_folder + "\\" + throwshed_file + ".tif", xsize = dem_array.shape[1], ysize = dem_array.shape[0], bands = 1, eType = gdal.GDT_Float32)
+    throwshed_ds.SetGeoTransform(dem_gt)
+    throwshed_ds.SetProjection(srs.ExportToWkt())   #SS bude nastaveny ako bol aj pri polygonovej vrstve
+    throwshed_band = throwshed_ds.GetRasterBand(1)
+    throwshed_band.SetNoDataValue(-9999)
+    # throwshed polygon sa rasterizuje, [1] - priradenie hodnot do pasma 1, burn_values=[1] - priradenie hodnot buniek = 1
+    gdal.RasterizeLayer(throwshed_ds, [1], throwshed_outlayer, burn_values=[1])
+    # nakoniec novovytvorena vrstva, datasource aj prvok treba dat rovne None, lebo inak sa nezobrazi spravne v QGISe
+    throwshed_outds = throwshed_ds = throwshed_outlayer = throwshed_feature = None
+    # vektorova podoba sa vymaze a zostane len rastrova
+    driver = ogr.GetDriverByName("ESRI Shapefile")
+    driver.DeleteDataSource(throwshed_output_folder + "\\" + throwshed_file + ".shp")
+else:
+    throwshed_outds = throwshed_outlayer = throwshed_feature = None
+    print("Zadana nespravna hodnota pri nastaveni pouzitia viditelnosti.")
+    exit()
