@@ -189,18 +189,19 @@ for alfa in alfa_list:
     # plt.gca().set_aspect('equal', adjustable='box')
     # plt.show()
 
-# definicia matic, do ktorych sa budu ukladat suradnice najvzdialenejsich bodov jednotlivych azimutov (po riadkoch) jednotlivych uhlov vystrelu (po stlpcoch)
-X_matrix = np.zeros((int(np.floor(360/dA)),len(alfa_list))) 
-Y_matrix = np.zeros((int(np.floor(360/dA)),len(alfa_list)))
-
-# cyklus kde sa prestriedaju vsetky trajektorie (vsetky uhly vystrelu)
-for i in range(0,len(alfa_list)):
-    # Otacame pod azimutom a porovnavame hodnoty z y_r s DMR
-    Azimuth = 0  #azimut, smer sever
-    k = 0
-    while True:
+# definicia vektorov, do ktorych sa budu ukladat suradnice najvzdialenejsich bodov jednotlivych azimutov
+X_coor_point_polygon = []
+Y_coor_point_polygon = []
+# Otacame pod azimutom a porovnavame hodnoty z y_r s DMR
+Azimuth = 0  #azimut, smer sever
+# cyklus, kde sa meni azimut
+while True:
+    S = []  #vektor vzdialenosti k najvzdialenejsim bodom pri jednotlivych uhloch vystrelu
+    # cyklus kde sa prestriedaju vsetky trajektorie (vsetky uhly vystrelu)
+    for i in range(0,len(alfa_list)):
         j = 0
         r = 0
+        #cyklus, kde sa meni vzdialenost
         while True:
             r += dr
             #vypocet suradnic so vzdialenostou dr-nasobku a pod Azimutom
@@ -232,39 +233,26 @@ for i in range(0,len(alfa_list)):
                 print("Hodnota int_compare neznama.")
                 exit()
 
-            #porovnanie vysky bunky s vyskou sipu, ak je sip pod DMR, zapise sa suradnica bodu
+            #porovnanie vysky bunky s vyskou sipu, ak je sip pod DMR, pripise sa maximalna vzdialenost pre konkretny uhol vystrelu
             if dem_int_point_height >= y_r[i][j]:
-                X_matrix[k][i] = X_coor_compare_point
-                Y_matrix[k][i] = Y_coor_compare_point
+                S.append(r)
                 break
 
-            #ak by sa stalo ze aj po poslednej vyske sipu je stale sip nad DMR, zapise sa posledna mozna suradnica, aby aj pod tymto azimutom bol predsalen bod (k problemu moze dojst zrejme pri nastaveni velkeho kroku dr)
+            #ak by sa stalo ze aj po poslednej vyske sipu je stale sip nad DMR, zapise sa posledna mozna vzdialenost (k problemu moze dojst zrejme pri nastaveni velkeho kroku dr)
             if j == len(y_r[i])-1:
-                X_matrix[k][i] = X_coor_compare_point
-                Y_matrix[k][i] = Y_coor_compare_point
+                S.append(r)
                 break
                 
             j += 1
-        Azimuth += dA
-        k += 1
-        #ukoncenie cyklu s meniacim sa Azimutom
-        if Azimuth >= 360:
-            break
-
-
-# definicia matice, do ktorej sa budu pocitat vzdialenosti najvzdialenejsich bodov jednotlivych azimutov (po riadkoch) jednotlivych uhlov vystrelu (po stlpcoch)
-S = np.zeros((int(np.floor(360/dA)),len(alfa_list))) 
-for i in range(0,len(X_matrix)):
-    for j in range(0,len(X_matrix[0])):
-        S[i][j] = np.sqrt((X_matrix[i][j]-X_coor_point)**2+(Y_matrix[i][j]-Y_coor_point)**2)  #vypocet vodorovnych vzdialenosti k najvzdialenejsim bodom
-
-# vyber suradnic najvzdialenejsich bodov pod kazdym azimutom
-X_coor_point_polygon = []
-Y_coor_point_polygon = []
-for i in range(0,len(X_matrix)):
-    val, idx = max((val, idx) for (idx, val) in enumerate(S[i]))
-    X_coor_point_polygon.append(X_matrix[i][idx])
-    Y_coor_point_polygon.append(Y_matrix[i][idx])
+        #nakoniec sa vyhlada maximalna vzdialenost spomedzi vsetkych pocitanych pre kazdy uhol vystrelu a zapisu sa suradnice najvzdialenejseho bodu pre dany azimut
+        if i == range(0,len(alfa_list))[-1]:
+            max_r, idx = max((max_r, idx) for (idx, max_r) in enumerate(S))
+            X_coor_point_polygon.append(X_coor_point + max_r*math.sin(Azimuth/180*math.pi))
+            Y_coor_point_polygon.append(Y_coor_point + max_r*math.cos(Azimuth/180*math.pi))
+    Azimuth += dA
+    #ukoncenie cyklu s meniacim sa Azimutom
+    if Azimuth >= 360:
+        break
 
 #vypis suradnic
 # print(X_coor_point_polygon)
