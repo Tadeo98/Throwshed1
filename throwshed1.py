@@ -14,15 +14,15 @@ import os
 dem_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\dem\dmr.tif" #cesta k dem
 point_layer_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\point\POINTS.shp"   #cesta k bodovej vrstve
 throwshed_output_folder = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\throwshed"  #cesta k priecinku, kde sa ulozi subor
-throwshed_file = r"throwshed_points2"   #nazov vystupneho suboru s cistym throwshedom
+throwshed_file = r"throwshed5"   #nazov vystupneho suboru s cistym throwshedom
 viewshed_file = r"viewshed" #nazov vystupneho suboru s viewshedom (ak sa ma pouzit)
 
 ## NASTAVENIA
-use_viewshed = 0 #pouzitie viditelnosti na orezanie throwshedu, nie = 0, ano = 1
+use_viewshed = 1 #pouzitie viditelnosti na orezanie throwshedu, nie = 0, ano = 1
 band_number = 1 #vybrane pasmo z dem, default = 1
 int_compare = 1 #interpolacia DMR vo vypoctovych bodoch, nearest neighbour = 0, linear = 1
 keep_point_crs = 0 #vystupna vrstva ma suradnicovy system ako vstupna bodova? ano = 1, nie, nastavim EPSG noveho SS = 0
-cumulative_throwshed = 1 #vypocitat kumulativny throwshed? nie (len jednoduchy, 0 a 1) = 0, ano (hodnoty 0, 1, 2, 3...n) = 1
+cumulative_throwshed = 1 #pri viacerych miestach vystrelu vypocitat kumulativny throwshed? nie (len jednoduchy, 0 a 1) = 0, ano (hodnoty 0, 1, 2, 3...n) = 1
 EPSG = 8353 #EPSG kod (suradnicovy system) vystupnej vrstvy throwshedu
 
 ## PREMENNE
@@ -107,7 +107,6 @@ for point_number in range(0,point_count):
     alfa_list.append(alfa_max)   #pridelenie aj poslednej hranicnej hodnoty (inak by bola posledna hodnota o cosi mensia ako maximalny uhol vystrelu)
 
     y_r = []    #buduca matica s vyskami projektilu kazdych dr metrov (hodnoty v riadku vedla seba) pod kazdym uhlom vystrelu (niekolko riadkov pod sebou)
-    j = 0
     #cyklenie sa vsetkymi hodnotami alfa
     for alfa in alfa_list:
         # Pociatocny drag
@@ -176,7 +175,6 @@ for point_number in range(0,point_count):
             dY = V_y*dt+1/2*(d_y+g)*dt**2
 
         y_r = y_r+[y_r1]
-        j += 1
 
         # print(x[-1])
         # print(y[-1])
@@ -190,9 +188,11 @@ for point_number in range(0,point_count):
         # plt.gca().set_aspect('equal', adjustable='box')
         # plt.show()
 
+
     # definicia vektorov, do ktorych sa budu ukladat suradnice najvzdialenejsich bodov jednotlivych azimutov
     X_coor_point_polygon = []
     Y_coor_point_polygon = []
+
     # Otacame pod azimutom a porovnavame hodnoty z y_r s DMR
     Azimuth = 0  #azimut, smer sever
     # cyklus, kde sa meni azimut
@@ -265,7 +265,7 @@ for point_number in range(0,point_count):
 
 
     #######################################################################
-    ## VYTVORENIE VYSTUPNEJ VRSTVY (VRSTIEV)
+    ## VYTVORENIE VYSTUPNEJ VRSTVY
 
     # vytvorenie novej geometrie
     throwshed_ring = ogr.Geometry(ogr.wkbLinearRing)
@@ -299,13 +299,15 @@ for point_number in range(0,point_count):
     throwshed_feature.SetGeometry(throwshed_polygon)
     throwshed_outlayer.CreateFeature(throwshed_feature)
 
+    # Vypocet maximalnej vzdialenosti pre viewshed z geoudajov vstupneho rastra a bodu vystrelu
+    max_distance_4 =  [X_coor_point-dem_gt[0], dem_gt[3]-Y_coor_point, dem_gt[0]+dem_gt[1]*len(dem_array[1])-X_coor_point, Y_coor_point-(dem_gt[3]+dem_gt[5]*len(dem_array))]
 
     # VYUZITIE VIEWSHED-U
     if use_viewshed == 1:
         # treba zavriet polygonovu vrstvu
         throwshed_outds = throwshed_outlayer = throwshed_feature = None
         # vytvorenie rastra viditelnosti, ulozi sa ako viewshed.tif do adresara s vystupnym throwshedom
-        gdal.ViewshedGenerate(srcBand=dem_band, driverName='GTiff', targetRasterName=throwshed_output_folder + "\\" + viewshed_file + ".tif", creationOptions=None, observerX=X_coor_point, observerY=Y_coor_point, observerHeight=h_E, targetHeight=h_T, visibleVal=1, invisibleVal=0, outOfRangeVal=0, noDataVal=-9999, dfCurvCoeff=0.85714, mode=2, maxDistance=10000)
+        gdal.ViewshedGenerate(srcBand=dem_band, driverName='GTiff', targetRasterName=throwshed_output_folder + "\\" + viewshed_file + ".tif", creationOptions=None, observerX=X_coor_point, observerY=Y_coor_point, observerHeight=h_E, targetHeight=h_T, visibleVal=1, invisibleVal=0, outOfRangeVal=0, noDataVal=-9999, dfCurvCoeff=0.85714, mode=2, maxDistance=np.max(max_distance_4))
         # otvorenie viewshed rastra
         viewshed_ds = gdal.Open(throwshed_output_folder + "\\" + viewshed_file + ".tif")
         # orezanie rastra viditelnosti throwshedom
