@@ -14,7 +14,7 @@ import os
 dem_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\dem\dmr.tif" #cesta k dem
 point_layer_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\point\POINTS.shp"   #cesta k bodovej vrstve
 throwshed_output_folder = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\throwshed"  #cesta k priecinku, kde sa ulozi subor
-throwshed_file = r"throwshed5"   #nazov vystupneho suboru s cistym throwshedom
+throwshed_file = r"throwshed10"   #nazov vystupneho suboru s cistym throwshedom
 viewshed_file = r"viewshed" #nazov vystupneho suboru s viewshedom (ak sa ma pouzit)
 
 ## NASTAVENIA
@@ -37,7 +37,9 @@ A = 0.00005 #plocha prierezu šípu [m^2], A = 0.0001 m^2 pri kruhovom priereze 
 m = 0.030 #hmotnost šípu [kg]
 dt = 0.001 #casovy interval [s]
 da = 45.0 #krok v uhle vystrelu [°]
-dA = 1.0 #krok v azimute [°]
+min_azimuth = 350.0 #minimalny azimut [°], (-360.0,360.0), ak sa riesi throwshed v celom okoli, tak min_azimuth = 0.0, mozne nastavit aj zaporne hodnoty, v pripade ze je nastavena vacsia hodnota ako max_azimuth, tak sa to prepocita do zapornej hodnoty
+max_azimuth = 10.0 #maximalny azimut [°], (0.0,360.0>, ak sa riesi throwshed v celom okoli, tak max_azimuth = 360.0, max_azimuth nasleduje v smere hodinovych ruciciek po min_azimuth
+dazimuth = 1.0 #krok v azimute [°]
 dr = 1.0 #krok vzdialenosti, pod ktorou sa bude vzdy interpolovat DMR a porovnavat sa s trajektoriou [m]
 h_E = 1.7 # vyska oci strielajuceho pre viewshed, defaultne 1.7 [m]
 h_T = 1.7 # vyska ciela pre viewshed, defaltne 0.0 [m]
@@ -79,6 +81,18 @@ point_layer = point_ds.GetLayer()
 
 # ziskanie poctu bodov vo vrstve
 point_count = point_layer.GetFeatureCount()
+
+# ak nahodou su krajne hodnoty mimo dovoleny interval, tak sa stopne skript
+if min_azimuth <= -360.0 or min_azimuth >= 360.0 or max_azimuth > 360.0 or max_azimuth == 0.0:
+    print("Zle nastavene hodnoty rozsahu azimutu.")
+    exit()
+# v pripade, ze je minimalny azimut vacsi ako maximalny, prepocita sa minimalny azimut na zaporny
+if min_azimuth > max_azimuth:
+    min_azimuth = min_azimuth - 360.0
+# ak nahodou rozsah azimutov presahuje kruh (co je problem potom pri vytvarani bodov a polygonu z nich), tak sa stopne skript
+if (max_azimuth - min_azimuth) > 360.0:
+    print("Zle nastavene hodnoty rozsahu azimutu.")
+    exit()
 
 point_number_once = 0
 # cyklus v ktorom sa vytvori raster throwshedu pre kazdy bod bodovej vrstvy
@@ -193,10 +207,18 @@ for point_number in range(0,point_count):
     X_coor_point_polygon = []
     Y_coor_point_polygon = []
 
-    # Otacame pod azimutom a porovnavame hodnoty z y_r s DMR
-    Azimuth = 0  #azimut, smer sever
-    # cyklus, kde sa meni azimut
-    while True:
+    #Vytvorenie listu so vsetkymi hodnotami azimutov, ktore sa pouziju v cykle
+    azimuth_arange = np.arange(min_azimuth, max_azimuth, dazimuth, dtype = np.float32) #arange() umoznuje vytvorit zoznam hodnot aj s krokom typu float (range to nedokaze)
+    azimuth_list = azimuth_arange.tolist() #transformacia typu np.ndarray na list, aby sa dal pouzit append()
+    azimuth_list.append(max_azimuth)   #pridelenie aj poslednej hranicnej hodnoty (inak by bola posledna hodnota o cosi mensia ako maximalny azimut)
+
+    # print("toto je azimuth_lsit:\n",azimuth_list)
+    # print("\n")
+    # for Azimuth in azimuth_list:
+    #     print(Azimuth)
+
+    # Otacame pod azimutom (cyklus) a porovnavame hodnoty z y_r s DMR
+    for Azimuth in azimuth_list:
         S = []  #vektor vzdialenosti k najvzdialenejsim bodom pri jednotlivych uhloch vystrelu
         # cyklus kde sa prestriedaju vsetky trajektorie (vsetky uhly vystrelu)
         for i in range(0,len(alfa_list)):
@@ -250,10 +272,7 @@ for point_number in range(0,point_count):
                 max_r, idx = max((max_r, idx) for (idx, max_r) in enumerate(S))
                 X_coor_point_polygon.append(X_coor_point + max_r*math.sin(Azimuth/180*math.pi))
                 Y_coor_point_polygon.append(Y_coor_point + max_r*math.cos(Azimuth/180*math.pi))
-        Azimuth += dA
-        #ukoncenie cyklu s meniacim sa Azimutom
-        if Azimuth >= 360:
-            break
+
 
     #vypis suradnic
     # print(X_coor_point_polygon)
@@ -269,10 +288,17 @@ for point_number in range(0,point_count):
 
     # vytvorenie novej geometrie
     throwshed_ring = ogr.Geometry(ogr.wkbLinearRing)
-    # pridanie bodov do geometrie
-    for i in range(0,len(X_coor_point_polygon)):
-        throwshed_ring.AddPoint(X_coor_point_polygon[i], Y_coor_point_polygon[i])
-    throwshed_ring.AddPoint(X_coor_point_polygon[0], Y_coor_point_polygon[0])   #posledny bod totozny s prvym
+    # ak je azimut v celom rozsahu (throwshed pre cele okolie), pridaju sa len body dopadu
+    if min_azimuth == 0.0 and max_azimuth == 360.0:
+        for i in range(0,len(X_coor_point_polygon)):
+            throwshed_ring.AddPoint(X_coor_point_polygon[i], Y_coor_point_polygon[i])
+    # ak je azimut iba v konkretnom rozsahu a nepocita sa throwshed pre cele okolie, treba pridat aj bod vystrelu, aby sa to spravne vykreslilo        
+    else:
+        throwshed_ring.AddPoint(X_coor_point, Y_coor_point)   #prvy bod (vystrelu) totozny s poslednym
+        # pridanie zvysnych bodov do geometrie
+        for i in range(0,len(X_coor_point_polygon)):
+            throwshed_ring.AddPoint(X_coor_point_polygon[i], Y_coor_point_polygon[i])
+        throwshed_ring.AddPoint(X_coor_point, Y_coor_point)   #posledny bod (vystrelu) totozny s prvym
 
     # vytvorenie polygonu
     throwshed_polygon = ogr.Geometry(ogr.wkbPolygon)
