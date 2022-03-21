@@ -2,22 +2,26 @@
 ## THROWSHED ##
 #######################################################################
 
+import math
+import os
+
+import numpy as np
 ## KNIZNICE
 from matplotlib.style import use
 from osgeo import gdal, ogr, osr
-import numpy as np
-import math
-import os
 
 #######################################################################
 ## CESTY
 dem_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\dem\dmr.tif" #cesta k dem
 point_layer_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\point\POINTS.shp"   #cesta k bodovej vrstve
+line_layer_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\line\lines.shp" #cesta k liniovej vektorovej vrstve
 throwshed_output_folder = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\throwshed"  #cesta k priecinku, kde sa ulozi subor
-throwshed_file = r"throwshed10"   #nazov vystupneho suboru s cistym throwshedom
-viewshed_file = r"viewshed" #nazov vystupneho suboru s viewshedom (ak sa ma pouzit)
+throwshed_file = r"throwshed"   #nazov vystupneho suboru s cistym throwshedom
+viewshed_file = r"viewshed" #nazov vystupneho suboru s viewshedom (nakoniec je vymazany)
+buffer_file = r"buffer"   #nazov vystupneho suboru s bufferom (nakoniec je vymazany)
 
 ## NASTAVENIA
+use_line = 1 #striela obranca spoza ohradenia alebo utocnik bez uvazovania prekazok v terene = 0, striela utocnik s uvazovanim hradieb ako prekazkami = 1
 use_viewshed = 1 #pouzitie viditelnosti na orezanie throwshedu, nie = 0, ano = 1
 band_number = 1 #vybrane pasmo z dem, default = 1
 int_compare = 1 #interpolacia DMR vo vypoctovych bodoch, nearest neighbour = 0, linear = 1
@@ -36,13 +40,15 @@ C_d = 2.5 #koeficient odporu/ťahu objektu vo vzduchu
 A = 0.00005 #plocha prierezu šípu [m^2], A = 0.0001 m^2 pri kruhovom priereze s priemerom cca 11 mm, A = 0.00005 m^2 pri kruhovom priereze s priemerom cca 8 mm
 m = 0.030 #hmotnost šípu [kg]
 dt = 0.001 #casovy interval [s]
-da = 45.0 #krok v uhle vystrelu [°]
-min_azimuth = 350.0 #minimalny azimut [°], (-360.0,360.0), ak sa riesi throwshed v celom okoli, tak min_azimuth = 0.0, mozne nastavit aj zaporne hodnoty, v pripade ze je nastavena vacsia hodnota ako max_azimuth, tak sa to prepocita do zapornej hodnoty
-max_azimuth = 10.0 #maximalny azimut [°], (0.0,360.0>, ak sa riesi throwshed v celom okoli, tak max_azimuth = 360.0, max_azimuth nasleduje v smere hodinovych ruciciek po min_azimuth
+dalfa = 45.0 #krok v uhle vystrelu [°]
+min_azimuth = 45.0 #minimalny azimut [°], (-360.0,360.0), ak sa riesi throwshed v celom okoli, tak min_azimuth = 0.0, mozne nastavit aj zaporne hodnoty, v pripade ze je nastavena vacsia hodnota ako max_azimuth, tak sa to prepocita do zapornej hodnoty
+max_azimuth = 180.0 #maximalny azimut [°], (0.0,360.0>, ak sa riesi throwshed v celom okoli, tak max_azimuth = 360.0, max_azimuth nasleduje v smere hodinovych ruciciek po min_azimuth
 dazimuth = 1.0 #krok v azimute [°]
 dr = 1.0 #krok vzdialenosti, pod ktorou sa bude vzdy interpolovat DMR a porovnavat sa s trajektoriou [m]
 h_E = 1.7 # vyska oci strielajuceho pre viewshed, defaultne 1.7 [m]
 h_T = 1.7 # vyska ciela pre viewshed, defaltne 0.0 [m]
+feet_height = 0.0 #vyska ochodze (chodidiel) nad terenom, na ktorej stoji strielajuci obranca (ak stoji priamo na terene, tak feet_height = 0.0) [m]
+wall_height = 3.5 #vyska hradby, ktora ma pre strielajucich utocnikov predstavovat prekazku [m]
 
 
 #############################################################################
@@ -78,9 +84,9 @@ else:
 point_ds = ogr.Open(point_layer_path, 0) #1 = editing, 0 = read only. Datasource
 # bodova vrstva
 point_layer = point_ds.GetLayer()
-
 # ziskanie poctu bodov vo vrstve
 point_count = point_layer.GetFeatureCount()
+
 
 # ak nahodou su krajne hodnoty mimo dovoleny interval, tak sa stopne skript
 if min_azimuth <= -360.0 or min_azimuth >= 360.0 or max_azimuth > 360.0 or max_azimuth == 0.0:
@@ -93,6 +99,85 @@ if min_azimuth > max_azimuth:
 if (max_azimuth - min_azimuth) > 360.0:
     print("Zle nastavene hodnoty rozsahu azimutu.")
     exit()
+
+#######################################################################
+## VYPOCET DMP NA ZAKLADE VOLBY POUZITIA HRADIEB V RASTRI
+# Vypocet na zaklade volby pouzitia hradieb v rastri
+if use_line == 0:
+    # nepouziju sa hradby, len sa pripocita vyska ochodze k vyske vystreleneho sipu, resp. pripocita sa vyska 0 m ak stoji obranca/utocnik priamo na terene
+    h = h+feet_height
+# pouzije sa vektorova vrstva s hradbami
+elif use_line == 1:
+    # zatvorime pasmo aby sme don mohli dat nove (ako DMP), pretoze este sa pasmo pouziva pri tvorbe viewshedu
+    dem_band = None
+    # import liniovej vrstvy
+    line_ds = ogr.Open(line_layer_path, 0) #1 = editing, 0 = read only. Datasource
+    # liniova vrstva
+    line_layer = line_ds.GetLayer()
+    # ziskanie poctu linii vo vrstve
+    line_count = line_layer.GetFeatureCount()
+
+    # nastavenia polygonovej vrstvy, ktora bude obsahovat buffer
+    shpdriver = ogr.GetDriverByName("ESRI Shapefile")
+    buffer_outds = shpdriver.CreateDataSource(throwshed_output_folder + "\\" + buffer_file + "_temp.shp")
+    srs = line_layer.GetSpatialRef()
+    buffer_outlayer = buffer_outds.CreateLayer(buffer_file + "_temp", srs)
+    buffer_feature = ogr.Feature(buffer_outlayer.GetLayerDefn())
+
+    buffer_dist = dr/2+np.sqrt(dem_gt[1]**2+dem_gt[5]**2)/2 #sirka buffera - krok dr + uhlopriecka bunky rastra s DMR
+    # cyklus citajuci vsetky linie z liniovej vrstvy
+    for line_number in range(0,line_count):
+        # ziskanie konkretnej linie
+        line_feature = line_layer.GetFeature(line_number)
+        # ziskanie geometrie konktretnej linie
+        line_geom = line_feature.GetGeometryRef()
+        # tvorba bufferov
+        if line_number == 0:
+            # ak je iba jedna linia, zapise sa sama
+            buffer_geom = line_geom.Buffer(buffer_dist,1) # 1 - pocet bodov tvoriacich 90° obluk okolo koncovych bodov
+        else:
+            # ak je viacero linii/bufferov, tak sa pridruzia spolu cez Union do jedneho prvku (aby sa buffre neprekryvali, akoby Dissolve)
+            buffer_geom = buffer_geom.Union(line_geom.Buffer(buffer_dist,1))
+
+    # zapis spojenych bufferov do vrstvy
+    buffer_feature.SetGeometry(buffer_geom)
+    buffer_outlayer.CreateFeature(buffer_feature)
+
+    # nastavenia rastra s bufferom
+    buffer_ds = gdal.GetDriverByName('GTiff').Create(throwshed_output_folder + "\\" + buffer_file + "_temp.tif", xsize = dem_array.shape[1], ysize = dem_array.shape[0], bands = 1, eType = gdal.GDT_Float32)
+    buffer_ds.SetGeoTransform(dem_gt)
+    buffer_ds.SetProjection(srs.ExportToWkt())   #SS bude nastaveny ako bol aj pri polygonovej vrstve
+    buffer_band = buffer_ds.GetRasterBand(1)
+    buffer_band.SetNoDataValue(0)
+    # buffer polygon sa rasterizuje, [1] - priradenie hodnot do pasma 1, burn_values=[1] - priradenie hodnot buniek = 1
+    gdal.RasterizeLayer(buffer_ds, [1], buffer_outlayer, burn_values=[wall_height])
+
+    # suma dvoch rastrov
+    buffer_array = buffer_band.ReadAsArray()
+    dem_array = np.add(dem_array,buffer_array)
+
+    # vytvorenie a nastavenie rastra DMP
+    dmp_driver = gdal.GetDriverByName("GTiff")
+    dmp_outds = dmp_driver.Create(throwshed_output_folder + "\\" + buffer_file + "_dmp_temp.tif", xsize = dem_array.shape[1], ysize = dem_array.shape[0], bands = 1, eType = gdal.GDT_Float32)
+    dmp_outds.SetGeoTransform(dem_gt)
+    dmp_outds.SetProjection(srs.ExportToWkt())
+    dem_band = dmp_outds.GetRasterBand(1) #sice dem_band, no spravne by malo byt dmp_band
+    dem_band.WriteArray(dem_array)
+    dem_band.SetNoDataValue(-9999)
+
+    # zavretie vsetkeho okrem rastra
+    buffer_ds = buffer_outds = buffer_outlayer = buffer_feature = None
+
+    # vymazanie .shp a .tif vrstvy s bufferom
+    buffer_driver = ogr.GetDriverByName("ESRI Shapefile")
+    buffer_driver.DeleteDataSource(throwshed_output_folder + "\\" + buffer_file + "_temp.shp")
+    os.remove(throwshed_output_folder + "\\" + buffer_file + "_temp.tif")
+else:
+    print("Nespravne nastavena volba uvazovania s hradbami.")
+    exit()
+
+#######################################################################
+## VYPOCET THROWSHEDU Z KAZDEHO BODU
 
 point_number_once = 0
 # cyklus v ktorom sa vytvori raster throwshedu pre kazdy bod bodovej vrstvy
@@ -116,7 +201,7 @@ for point_number in range(0,point_count):
         print("Minimalny uhol vystrelu ma vacsiu hodnotu ako maximalny. Opravit.")
         exit()
     #Vytvorenie listu so vsetkymi hodnotami uhla vystrelu, ktore sa pouziju v cykle
-    alfa_arange = np.arange(alfa_min, alfa_max, da, dtype = np.float32) #arange() umoznuje vytvorit zoznam hodnot aj s krokom typu float (range to nedokaze)
+    alfa_arange = np.arange(alfa_min, alfa_max, dalfa, dtype = np.float32) #arange() umoznuje vytvorit zoznam hodnot aj s krokom typu float (range to nedokaze)
     alfa_list = alfa_arange.tolist() #transformacia typu np.ndarray na list, aby sa dal pouzit append()
     alfa_list.append(alfa_max)   #pridelenie aj poslednej hranicnej hodnoty (inak by bola posledna hodnota o cosi mensia ako maximalny uhol vystrelu)
 
@@ -212,11 +297,6 @@ for point_number in range(0,point_count):
     azimuth_list = azimuth_arange.tolist() #transformacia typu np.ndarray na list, aby sa dal pouzit append()
     azimuth_list.append(max_azimuth)   #pridelenie aj poslednej hranicnej hodnoty (inak by bola posledna hodnota o cosi mensia ako maximalny azimut)
 
-    # print("toto je azimuth_lsit:\n",azimuth_list)
-    # print("\n")
-    # for Azimuth in azimuth_list:
-    #     print(Azimuth)
-
     # Otacame pod azimutom (cyklus) a porovnavame hodnoty z y_r s DMR
     for Azimuth in azimuth_list:
         S = []  #vektor vzdialenosti k najvzdialenejsim bodom pri jednotlivych uhloch vystrelu
@@ -306,7 +386,7 @@ for point_number in range(0,point_count):
 
     # ulozenie polygonu do vrstvy
     driver = ogr.GetDriverByName("ESRI Shapefile")
-    throwshed_outds = driver.CreateDataSource(throwshed_output_folder + "\\" + throwshed_file + "_temp" + ".shp")
+    throwshed_outds = driver.CreateDataSource(throwshed_output_folder + "\\" + throwshed_file + "_temp.shp")
 
     # definicia referencneho systemu
     srs = osr.SpatialReference()
@@ -338,9 +418,9 @@ for point_number in range(0,point_count):
         viewshed_ds = gdal.Open(throwshed_output_folder + "\\" + viewshed_file + ".tif")
         # orezanie rastra viditelnosti throwshedom
         gdal.Warp(throwshed_output_folder + "\\" + throwshed_file + ".tif", viewshed_ds, cutlineDSName = throwshed_output_folder + "\\" + throwshed_file + "_temp" + ".shp", cropToCutline = False, dstNodata = 0)
-        # vymazanie polygonu .shp s throwshedom a rastra .tif s viewshedom
+        # vymazanie polygonu .shp s throwshedom a rastra .tif s viewshedom, tiez DMP sa vymaze
         driver = ogr.GetDriverByName("ESRI Shapefile")
-        driver.DeleteDataSource(throwshed_output_folder + "\\" + throwshed_file + "_temp" + ".shp")
+        driver.DeleteDataSource(throwshed_output_folder + "\\" + throwshed_file + "_temp.shp")
         viewshed_ds = None
         os.remove(throwshed_output_folder + "\\" + viewshed_file + ".tif")
     # NEVYUZITIE VIEWSHED-U
@@ -355,9 +435,9 @@ for point_number in range(0,point_count):
         gdal.RasterizeLayer(throwshed_ds, [1], throwshed_outlayer, burn_values=[1])
         # nakoniec novovytvorena vrstva, datasource aj prvok treba dat rovne None, lebo inak sa nezobrazi spravne v QGISe
         throwshed_outds = throwshed_ds = throwshed_outlayer = throwshed_feature = None
-        # vektorova podoba sa vymaze a zostane len rastrova
+        # vektorova podoba sa vymaze a zostane len rastrova, tiez DMP sa vymaze
         driver = ogr.GetDriverByName("ESRI Shapefile")
-        driver.DeleteDataSource(throwshed_output_folder + "\\" + throwshed_file + "_temp" + ".shp")
+        driver.DeleteDataSource(throwshed_output_folder + "\\" + throwshed_file + "_temp.shp")
     else:
         throwshed_outds = throwshed_outlayer = throwshed_feature = None
         print("Zadana nespravna hodnota pri nastaveni pouzitia viditelnosti.")
@@ -410,3 +490,7 @@ for point_number in range(0,point_count):
                 exit()
             throwshed_outband.SetNoDataValue(0)
             throwshed_outds = throwshed_outband = None
+
+# zavretie a vymazanie DMP
+dmp_outds = dem_band = None
+os.remove(throwshed_output_folder + "\\" + buffer_file + "_dmp_temp.tif")
