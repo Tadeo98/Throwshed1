@@ -13,15 +13,15 @@ from osgeo import gdal, ogr, osr
 #######################################################################
 ## CESTY
 dem_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\dem\dmr.tif" #cesta k dem
-point_layer_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\point\POINTS.shp"   #cesta k bodovej vrstve
+point_layer_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\point\POINTS2.shp"   #cesta k bodovej vrstve
 line_layer_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\line\lines.shp" #cesta k liniovej vektorovej vrstve
 throwshed_output_folder = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\throwshed"  #cesta k priecinku, kde sa ulozi subor
-throwshed_file = r"throwshed"   #nazov vystupneho suboru s cistym throwshedom
+throwshed_file = r"throwshed2"   #nazov vystupneho suboru s cistym throwshedom
 viewshed_file = r"viewshed" #nazov vystupneho suboru s viewshedom (nakoniec je vymazany)
 buffer_file = r"buffer"   #nazov vystupneho suboru s bufferom (nakoniec je vymazany)
 
 ## NASTAVENIA
-use_line = 1 #striela obranca spoza ohradenia alebo utocnik bez uvazovania prekazok v terene = 0, striela utocnik s uvazovanim hradieb ako prekazkami = 1
+use_line = 0 #striela obranca spoza ohradenia alebo utocnik bez uvazovania prekazok v terene = 0, striela utocnik s uvazovanim hradieb ako prekazkami = 1
 use_viewshed = 1 #pouzitie viditelnosti na orezanie throwshedu, nie = 0, ano = 1
 band_number = 1 #vybrane pasmo z dem, default = 1
 int_compare = 1 #interpolacia DMR vo vypoctovych bodoch, nearest neighbour = 0, linear = 1
@@ -34,15 +34,15 @@ h = 1.6 #pociatocna vyska nad povrchom [m]
 alfa_min = 0.0 #minimalny uhol hodu/vystrelu [°]
 alfa_max = 45.0 #maximalny uhol hodu/vystrelu [°], polozit rovne alfa_min, ak sa striela iba pod jednym uhlom
 g = -9.8 #gravitacne zrychlenie [m/s^2]
-V_0 = 100 #pociatocna rychlost [m/s]
+V_0 = 67 #pociatocna rychlost [m/s]
 ro = 1.225 #hustota vzduchu [kg/m^3], pri t = 15°C, H = 0m, Fi = 0# (suchy vzduch) sa ro = 1.225 kg/m^3
 C_d = 2.5 #koeficient odporu/ťahu objektu vo vzduchu
 A = 0.00005 #plocha prierezu šípu [m^2], A = 0.0001 m^2 pri kruhovom priereze s priemerom cca 11 mm, A = 0.00005 m^2 pri kruhovom priereze s priemerom cca 8 mm
 m = 0.030 #hmotnost šípu [kg]
 dt = 0.001 #casovy interval [s]
-dalfa = 45.0 #krok v uhle vystrelu [°]
-min_azimuth = 45.0 #minimalny azimut [°], (-360.0,360.0), ak sa riesi throwshed v celom okoli, tak min_azimuth = 0.0, mozne nastavit aj zaporne hodnoty, v pripade ze je nastavena vacsia hodnota ako max_azimuth, tak sa to prepocita do zapornej hodnoty
-max_azimuth = 180.0 #maximalny azimut [°], (0.0,360.0>, ak sa riesi throwshed v celom okoli, tak max_azimuth = 360.0, max_azimuth nasleduje v smere hodinovych ruciciek po min_azimuth
+dalfa = 15.0 #krok v uhle vystrelu [°]
+min_azimuth = 270.0 #minimalny azimut [°], (-360.0,360.0), ak sa riesi throwshed v celom okoli, tak min_azimuth = 0.0, mozne nastavit aj zaporne hodnoty, v pripade ze je nastavena vacsia hodnota ako max_azimuth, tak sa to prepocita do zapornej hodnoty
+max_azimuth = 90.0 #maximalny azimut [°], (0.0,360.0>, ak sa riesi throwshed v celom okoli, tak max_azimuth = 360.0, max_azimuth nasleduje v smere hodinovych ruciciek po min_azimuth
 dazimuth = 1.0 #krok v azimute [°]
 dr = 1.0 #krok vzdialenosti, pod ktorou sa bude vzdy interpolovat DMR a porovnavat sa s trajektoriou [m]
 h_E = 1.7 # vyska oci strielajuceho pre viewshed, defaultne 1.7 [m]
@@ -492,5 +492,6 @@ for point_number in range(0,point_count):
             throwshed_outds = throwshed_outband = None
 
 # zavretie a vymazanie DMP
-dmp_outds = dem_band = None
-os.remove(throwshed_output_folder + "\\" + buffer_file + "_dmp_temp.tif")
+if use_line == 1:
+    dmp_outds = dem_band = None
+    os.remove(throwshed_output_folder + "\\" + buffer_file + "_dmp_temp.tif")
