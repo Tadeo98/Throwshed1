@@ -12,11 +12,11 @@ from osgeo import gdal, ogr, osr
 
 #######################################################################
 ## CESTY
-dem_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\dem\dmr.tif" #cesta k dem
-point_layer_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\point\POINTS2.shp"   #cesta k bodovej vrstve
+dem_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\case_study\RC\data\raster\dmr2.tif" #cesta k dem
+point_layer_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\case_study\RC\data\vektor\POINTS2.shp"   #cesta k bodovej vrstve
 line_layer_path = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\line\lines.shp" #cesta k liniovej vektorovej vrstve
-throwshed_output_folder = r"D:\School\STU_SvF_BA\Term10\Diplomovka\Throwshed1\data\throwshed"  #cesta k priecinku, kde sa ulozi subor
-throwshed_file = r"throwshed2"   #nazov vystupneho suboru s cistym throwshedom
+throwshed_output_folder = r"D:\School\STU_SvF_BA\Term10\Diplomovka\case_study\RC\data\raster"  #cesta k priecinku, kde sa ulozi subor
+throwshed_file = r"throwshedtest"   #nazov vystupneho suboru s cistym throwshedom
 viewshed_file = r"viewshed" #nazov vystupneho suboru s viewshedom (nakoniec je vymazany)
 buffer_file = r"buffer"   #nazov vystupneho suboru s bufferom (nakoniec je vymazany)
 
@@ -24,31 +24,33 @@ buffer_file = r"buffer"   #nazov vystupneho suboru s bufferom (nakoniec je vymaz
 use_line = 0 #striela obranca spoza ohradenia alebo utocnik bez uvazovania prekazok v terene = 0, striela utocnik s uvazovanim hradieb ako prekazkami = 1
 use_viewshed = 1 #pouzitie viditelnosti na orezanie throwshedu, nie = 0, ano = 1
 band_number = 1 #vybrane pasmo z dem, default = 1
-int_compare = 1 #interpolacia DMR vo vypoctovych bodoch, nearest neighbour = 0, linear = 1
+int_compare = 0 #interpolacia DMR vo vypoctovych bodoch, nearest neighbour = 0, linear = 1
 keep_point_crs = 0 #vystupna vrstva ma suradnicovy system ako vstupna bodova? ano = 1, nie, nastavim EPSG noveho SS = 0
 cumulative_throwshed = 1 #pri viacerych miestach vystrelu vypocitat kumulativny throwshed? nie (len jednoduchy, 0 a 1) = 0, ano (hodnoty 0, 1, 2, 3...n) = 1
 EPSG = 8353 #EPSG kod (suradnicovy system) vystupnej vrstvy throwshedu
 
 ## PREMENNE
-h = 1.6 #pociatocna vyska nad povrchom [m]
+h = 1.7 #pociatocna vyska nad povrchom [m]
 alfa_min = 0.0 #minimalny uhol hodu/vystrelu [°]
 alfa_max = 45.0 #maximalny uhol hodu/vystrelu [°], polozit rovne alfa_min, ak sa striela iba pod jednym uhlom
-g = -9.8 #gravitacne zrychlenie [m/s^2]
+g = -9.81 #gravitacne zrychlenie [m/s^2]
 V_0 = 67 #pociatocna rychlost [m/s]
 ro = 1.225 #hustota vzduchu [kg/m^3], pri t = 15°C, H = 0m, Fi = 0# (suchy vzduch) sa ro = 1.225 kg/m^3
-C_d = 2.5 #koeficient odporu/ťahu objektu vo vzduchu
-A = 0.00005 #plocha prierezu šípu [m^2], A = 0.0001 m^2 pri kruhovom priereze s priemerom cca 11 mm, A = 0.00005 m^2 pri kruhovom priereze s priemerom cca 8 mm
-m = 0.030 #hmotnost šípu [kg]
-dt = 0.001 #casovy interval [s]
-dalfa = 15.0 #krok v uhle vystrelu [°]
-min_azimuth = 270.0 #minimalny azimut [°], (-360.0,360.0), ak sa riesi throwshed v celom okoli, tak min_azimuth = 0.0, mozne nastavit aj zaporne hodnoty, v pripade ze je nastavena vacsia hodnota ako max_azimuth, tak sa to prepocita do zapornej hodnoty
-max_azimuth = 90.0 #maximalny azimut [°], (0.0,360.0>, ak sa riesi throwshed v celom okoli, tak max_azimuth = 360.0, max_azimuth nasleduje v smere hodinovych ruciciek po min_azimuth
+C_d = 3.06 #koeficient odporu/ťahu objektu vo vzduchu
+A = 0.000050 #plocha prierezu šípu [m^2], A = 0.0001 m^2 pri kruhovom priereze s priemerom cca 11 mm, A = 0.00005 m^2 pri kruhovom priereze s priemerom cca 8 mm
+m = 0.035 #hmotnost šípu [kg]
+dt = 0.01 #casovy interval [s]
+dalfa = 5.0 #krok v uhle vystrelu [°]
+min_azimuth = 90.0 #minimalny azimut [°], (-360.0,360.0), ak sa riesi throwshed v celom okoli, tak min_azimuth = 0.0, mozne nastavit aj zaporne hodnoty, v pripade ze je nastavena vacsia hodnota ako max_azimuth, tak sa to prepocita do zapornej hodnoty
+max_azimuth = 270.0 #maximalny azimut [°], (0.0,360.0>, ak sa riesi throwshed v celom okoli, tak max_azimuth = 360.0, max_azimuth nasleduje v smere hodinovych ruciciek po min_azimuth
 dazimuth = 1.0 #krok v azimute [°]
-dr = 1.0 #krok vzdialenosti, pod ktorou sa bude vzdy interpolovat DMR a porovnavat sa s trajektoriou [m]
-h_E = 1.7 # vyska oci strielajuceho pre viewshed, defaultne 1.7 [m]
+dr = 1.0 #krok vzdialenosti, pod ktorou sa bude vzdy interpolovat DMR a porovnavat sa s trajektoriou (dobre nastavit na velkost bunky rastra DMR) [m]
+h_E = 1.6 # vyska oci strielajuceho pre viewshed, defaultne 1.7 [m]
 h_T = 1.7 # vyska ciela pre viewshed, defaltne 0.0 [m]
-feet_height = 0.0 #vyska ochodze (chodidiel) nad terenom, na ktorej stoji strielajuci obranca (ak stoji priamo na terene, tak feet_height = 0.0) [m]
-wall_height = 3.5 #vyska hradby, ktora ma pre strielajucich utocnikov predstavovat prekazku [m]
+feet_height = 4.0 #vyska ochodze/valu (chodidiel) nad terenom, na ktorej stoji strielajuci obranca (ak stoji priamo na terene, tak feet_height = 0.0) [m]
+wall_height = None #vyska hradby, ktora ma pre strielajucich utocnikov predstavovat prekazku [m]
+const = 1   #1.25 #prenásobenie koeficientu odporu konstantou, platí len pre prvých 40 m letu
+A_p = 0.000208 #priemerny pridavok pre prvych 40 m ohybania sipu [m^2], experimentalne
 
 
 #############################################################################
@@ -188,7 +190,7 @@ for point_number in range(0,point_count):
     point_geom = point_feature.GetGeometryRef()
     X_coor_point = point_geom.GetX()
     Y_coor_point = point_geom.GetY()
-
+    
     # zistenie vysky bunky, na ktorej sa nachadza bod
     dem_cell_column = round(abs((X_coor_point - (dem_gt[0]+dem_gt[1]/2))/dem_gt[1]))
     dem_cell_row = round(abs((Y_coor_point - (dem_gt[3]+dem_gt[5]/2))/dem_gt[5]))
@@ -209,7 +211,7 @@ for point_number in range(0,point_count):
     #cyklenie sa vsetkymi hodnotami alfa
     for alfa in alfa_list:
         # Pociatocny drag
-        d = -ro*V_0**2*C_d*A/(2*m)    #presny vztah
+        d = -ro*V_0**2*C_d*const*(A+A_p)/(2*m)    #presny vztah
         # d = -C_d/1000*V_0**2    #priblizny vztah, pre sip postacuje
 
         r = dr   #radialna vzdialenost (interpolacny skok)
@@ -237,7 +239,7 @@ for point_number in range(0,point_count):
             #suradnice
             x = x + [x[-1] + dX]
             y = y + [y[-1] + dY]
-            
+
             #posledna hodnota bude v najmensej vyske celeho rastra, nizsie uz netreba prepocitavat, cyklus sa skonci
             if y[i] < min_height:
                 y[i] = min_height
@@ -260,7 +262,10 @@ for point_number in range(0,point_count):
             V = math.sqrt((dX/dt)**2+(dY/dt)**2)
             
             #novy drag
-            d = -ro*V**2*C_d*A/(2*m)   #presny vztah
+            if math.sqrt(x[-1]**2+(y[-1]-dem_cell_height)**2) < 40:
+                d = -ro*V**2*C_d*const*(A+A_p)/(2*m)
+            else:
+                d = -ro*V**2*C_d*A/(2*m)    #presny vztah
             #d = -C_d/1000*V**2    #priblizny vztah, pre sip postacuje
             
             #zlozky pociatocneho dragu v smeroch x a y
@@ -365,7 +370,7 @@ for point_number in range(0,point_count):
 
     #######################################################################
     ## VYTVORENIE VYSTUPNEJ VRSTVY
-
+    
     # vytvorenie novej geometrie
     throwshed_ring = ogr.Geometry(ogr.wkbLinearRing)
     # ak je azimut v celom rozsahu (throwshed pre cele okolie), pridaju sa len body dopadu
@@ -387,7 +392,7 @@ for point_number in range(0,point_count):
     # ulozenie polygonu do vrstvy
     driver = ogr.GetDriverByName("ESRI Shapefile")
     throwshed_outds = driver.CreateDataSource(throwshed_output_folder + "\\" + throwshed_file + "_temp.shp")
-
+    
     # definicia referencneho systemu
     srs = osr.SpatialReference()
     if keep_point_crs == 0:
@@ -399,7 +404,7 @@ for point_number in range(0,point_count):
         throwshed_outds = None
         exit()
     throwshed_outlayer = throwshed_outds.CreateLayer(throwshed_file + "_temp", srs)
-
+    
     # pridanie polygonu do feature a jeho ulozenie do vystupnej vrstvy
     throwshed_feature = ogr.Feature(throwshed_outlayer.GetLayerDefn())
     throwshed_feature.SetGeometry(throwshed_polygon)
@@ -407,13 +412,13 @@ for point_number in range(0,point_count):
 
     # Vypocet maximalnej vzdialenosti pre viewshed z geoudajov vstupneho rastra a bodu vystrelu
     max_distance_4 =  [X_coor_point-dem_gt[0], dem_gt[3]-Y_coor_point, dem_gt[0]+dem_gt[1]*len(dem_array[1])-X_coor_point, Y_coor_point-(dem_gt[3]+dem_gt[5]*len(dem_array))]
-
+    
     # VYUZITIE VIEWSHED-U
     if use_viewshed == 1:
         # treba zavriet polygonovu vrstvu
         throwshed_outds = throwshed_outlayer = throwshed_feature = None
         # vytvorenie rastra viditelnosti, ulozi sa ako viewshed.tif do adresara s vystupnym throwshedom
-        gdal.ViewshedGenerate(srcBand=dem_band, driverName='GTiff', targetRasterName=throwshed_output_folder + "\\" + viewshed_file + ".tif", creationOptions=None, observerX=X_coor_point, observerY=Y_coor_point, observerHeight=h_E, targetHeight=h_T, visibleVal=1, invisibleVal=0, outOfRangeVal=0, noDataVal=-9999, dfCurvCoeff=0.85714, mode=2, maxDistance=np.max(max_distance_4))
+        gdal.ViewshedGenerate(srcBand=dem_band, driverName='GTiff', targetRasterName=throwshed_output_folder + "\\" + viewshed_file + ".tif", creationOptions=None, observerX=X_coor_point, observerY=Y_coor_point, observerHeight=h_E+feet_height, targetHeight=h_T, visibleVal=1, invisibleVal=0, outOfRangeVal=0, noDataVal=-9999, dfCurvCoeff=0.85714, mode=2, maxDistance=np.max(max_distance_4))
         # otvorenie viewshed rastra
         viewshed_ds = gdal.Open(throwshed_output_folder + "\\" + viewshed_file + ".tif")
         # orezanie rastra viditelnosti throwshedom
@@ -443,7 +448,7 @@ for point_number in range(0,point_count):
         print("Zadana nespravna hodnota pri nastaveni pouzitia viditelnosti.")
         exit()
 
-
+    
     # SCITAVANIE RASTROV THROWSHED-OV VIACERYCH BODOV
     # prvy raster sa nacita do array ako zakladny
     if point_number_once == 0 and point_count > 1:

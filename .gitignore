@@ -2,7 +2,10 @@ data
 Throwshed1.qgz
 test.py
 test2.py
+test3.py
 no_DMR_throwshed.py
+no_DMR_throwshed_speeds.py
 up_n_down.py
 no_DMR_throwshed_angles.py
+no_DMR_throwshed_times.py
 arrowhead_parameters.py
